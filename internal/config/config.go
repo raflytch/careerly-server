@@ -12,6 +12,12 @@ type Config struct {
 	JWT      JWTConfig
 	Google   GoogleConfig
 	ImageKit ImageKitConfig
+	GenAI    GenAIConfig
+}
+
+type GenAIConfig struct {
+	APIKey string
+	Model  string
 }
 
 type ImageKitConfig struct {
@@ -85,6 +91,10 @@ func Load() *Config {
 			PublicKey:   getEnv("IMAGEKIT_PUBLIC_KEY", ""),
 			PrivateKey:  getEnv("IMAGEKIT_PRIVATE_KEY", ""),
 			URLEndpoint: getEnv("IMAGEKIT_URL_ENDPOINT", ""),
+		},
+		GenAI: GenAIConfig{
+			APIKey: getEnv("GOOGLE_GEN_AI_API_KEY", ""),
+			Model:  getEnv("GOOGLE_GEN_AI_MODEL", "gemini-2.0-flash"),
 		},
 	}
 }

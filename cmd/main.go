@@ -11,6 +11,7 @@ import (
 	"github.com/raflytch/careerly-server/internal/repository"
 	"github.com/raflytch/careerly-server/internal/routes"
 	"github.com/raflytch/careerly-server/internal/service"
+	"github.com/raflytch/careerly-server/pkg/genai"
 	"github.com/raflytch/careerly-server/pkg/imagekit"
 	"github.com/raflytch/careerly-server/pkg/jwt"
 
@@ -48,19 +49,37 @@ func main() {
 		URLEndpoint: cfg.ImageKit.URLEndpoint,
 	})
 
+	var genaiClient *genai.Client
+	if cfg.GenAI.APIKey != "" {
+		var err error
+		genaiClient, err = genai.NewClient(genai.Config{
+			APIKey: cfg.GenAI.APIKey,
+			Model:  cfg.GenAI.Model,
+		})
+		if err != nil {
+			log.Printf("Warning: Failed to initialize GenAI client: %v", err)
+		}
+	}
+
 	userRepo := repository.NewUserRepository(db)
 	cacheRepo := repository.NewCacheRepository(redisClient)
 	planRepo := repository.NewPlanRepository(db)
+	subscriptionRepo := repository.NewSubscriptionRepository(db)
+	usageRepo := repository.NewUsageRepository(db)
+	resumeRepo := repository.NewResumeRepository(db)
 
 	authService := service.NewAuthService(userRepo, cacheRepo, cfg.Google, jwtManager)
 	userService := service.NewUserService(userRepo, cacheRepo)
 	planService := service.NewPlanService(planRepo, cacheRepo)
+	quotaService := service.NewQuotaService(subscriptionRepo, usageRepo)
+	resumeService := service.NewResumeService(resumeRepo, quotaService, genaiClient, cacheRepo)
 
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(userService, imagekitClient)
 	planHandler := handler.NewPlanHandler(planService)
+	resumeHandler := handler.NewResumeHandler(resumeService, quotaService)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "Careerly API",
@@ -79,9 +98,10 @@ func main() {
 	}))
 
 	routes.Setup(app, routes.Handlers{
-		Auth: authHandler,
-		User: userHandler,
-		Plan: planHandler,
+		Auth:   authHandler,
+		User:   userHandler,
+		Plan:   planHandler,
+		Resume: resumeHandler,
 	}, routes.Middlewares{
 		Auth: authMiddleware,
 	})

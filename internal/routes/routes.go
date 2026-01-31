@@ -8,9 +8,10 @@ import (
 )
 
 type Handlers struct {
-	Auth *handler.AuthHandler
-	User *handler.UserHandler
-	Plan *handler.PlanHandler
+	Auth   *handler.AuthHandler
+	User   *handler.UserHandler
+	Plan   *handler.PlanHandler
+	Resume *handler.ResumeHandler
 }
 
 type Middlewares struct {
@@ -25,6 +26,7 @@ func Setup(app *fiber.App, handlers Handlers, middlewares Middlewares) {
 	setupAuthRoutes(api, handlers.Auth)
 	setupUserRoutes(api, handlers.User, middlewares.Auth)
 	setupPlanRoutes(api, handlers.Plan, middlewares.Auth)
+	setupResumeRoutes(api, handlers.Resume, middlewares.Auth)
 }
 
 func healthCheck(c *fiber.Ctx) error {
