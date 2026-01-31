@@ -50,14 +50,17 @@ func main() {
 
 	userRepo := repository.NewUserRepository(db)
 	cacheRepo := repository.NewCacheRepository(redisClient)
+	planRepo := repository.NewPlanRepository(db)
 
 	authService := service.NewAuthService(userRepo, cacheRepo, cfg.Google, jwtManager)
 	userService := service.NewUserService(userRepo, cacheRepo)
+	planService := service.NewPlanService(planRepo, cacheRepo)
 
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(userService, imagekitClient)
+	planHandler := handler.NewPlanHandler(planService)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "Careerly API",
@@ -78,6 +81,7 @@ func main() {
 	routes.Setup(app, routes.Handlers{
 		Auth: authHandler,
 		User: userHandler,
+		Plan: planHandler,
 	}, routes.Middlewares{
 		Auth: authMiddleware,
 	})
