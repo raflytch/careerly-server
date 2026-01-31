@@ -11,6 +11,13 @@ type Config struct {
 	Redis    RedisConfig
 	JWT      JWTConfig
 	Google   GoogleConfig
+	ImageKit ImageKitConfig
+}
+
+type ImageKitConfig struct {
+	PublicKey   string
+	PrivateKey  string
+	URLEndpoint string
 }
 
 type AppConfig struct {
@@ -73,6 +80,11 @@ func Load() *Config {
 			ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 			ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 			RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", ""),
+		},
+		ImageKit: ImageKitConfig{
+			PublicKey:   getEnv("IMAGEKIT_PUBLIC_KEY", ""),
+			PrivateKey:  getEnv("IMAGEKIT_PRIVATE_KEY", ""),
+			URLEndpoint: getEnv("IMAGEKIT_URL_ENDPOINT", ""),
 		},
 	}
 }

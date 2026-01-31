@@ -13,7 +13,7 @@ func setupUserRoutes(router fiber.Router, h *handler.UserHandler, authMiddleware
 
 	users.Get("/profile", h.GetProfile)
 	users.Put("/profile", h.Update)
-	users.Get("/", h.GetAll)
-	users.Get("/:id", h.GetByID)
+	users.Get("/", middleware.RequireAdmin(), h.GetAll)
+	users.Get("/:id", middleware.RequireAdmin(), h.GetByID)
 	users.Delete("/:id", middleware.RequireAdmin(), h.Delete)
 }

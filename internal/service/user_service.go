@@ -99,7 +99,7 @@ func (s *userService) GetAll(ctx context.Context, page, limit int) (*domain.Pagi
 	}, nil
 }
 
-func (s *userService) Update(ctx context.Context, id uuid.UUID, name string, avatarURL *string) (*domain.User, error) {
+func (s *userService) Update(ctx context.Context, id uuid.UUID, name string) (*domain.User, error) {
 	user, err := s.userRepo.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -109,13 +109,32 @@ func (s *userService) Update(ctx context.Context, id uuid.UUID, name string, ava
 	}
 
 	user.Name = name
-	if avatarURL != nil {
-		user.AvatarURL = avatarURL
-	}
 
 	if err := s.userRepo.Update(ctx, user); err != nil {
 		return nil, err
 	}
+
+	cacheKey := fmt.Sprintf("%s%s", userCachePrefix, id.String())
+	_ = s.cacheRepo.Delete(ctx, cacheKey)
+	_ = s.cacheRepo.DeleteByPattern(ctx, userListCacheKey+"*")
+
+	return user, nil
+}
+
+func (s *userService) UpdateAvatar(ctx context.Context, id uuid.UUID, avatarURL string) (*domain.User, error) {
+	user, err := s.userRepo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+
+	if err := s.userRepo.UpdateAvatar(ctx, id, avatarURL); err != nil {
+		return nil, err
+	}
+
+	user.AvatarURL = &avatarURL
 
 	cacheKey := fmt.Sprintf("%s%s", userCachePrefix, id.String())
 	_ = s.cacheRepo.Delete(ctx, cacheKey)

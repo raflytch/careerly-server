@@ -11,6 +11,7 @@ import (
 	"github.com/raflytch/careerly-server/internal/repository"
 	"github.com/raflytch/careerly-server/internal/routes"
 	"github.com/raflytch/careerly-server/internal/service"
+	"github.com/raflytch/careerly-server/pkg/imagekit"
 	"github.com/raflytch/careerly-server/pkg/jwt"
 
 	"github.com/gofiber/fiber/v2"
@@ -41,6 +42,12 @@ func main() {
 
 	jwtManager := jwt.NewJWTManager(cfg.JWT.Secret, cfg.JWT.ExpiryHours)
 
+	imagekitClient := imagekit.NewClient(imagekit.Config{
+		PublicKey:   cfg.ImageKit.PublicKey,
+		PrivateKey:  cfg.ImageKit.PrivateKey,
+		URLEndpoint: cfg.ImageKit.URLEndpoint,
+	})
+
 	userRepo := repository.NewUserRepository(db)
 	cacheRepo := repository.NewCacheRepository(redisClient)
 
@@ -50,7 +57,7 @@ func main() {
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	authHandler := handler.NewAuthHandler(authService)
-	userHandler := handler.NewUserHandler(userService)
+	userHandler := handler.NewUserHandler(userService, imagekitClient)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "Careerly API",

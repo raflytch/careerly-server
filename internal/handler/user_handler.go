@@ -6,6 +6,7 @@ import (
 	"github.com/raflytch/careerly-server/internal/domain"
 	"github.com/raflytch/careerly-server/internal/middleware"
 	"github.com/raflytch/careerly-server/internal/service"
+	"github.com/raflytch/careerly-server/pkg/imagekit"
 	"github.com/raflytch/careerly-server/pkg/response"
 
 	"github.com/gofiber/fiber/v2"
@@ -13,16 +14,19 @@ import (
 )
 
 type UserHandler struct {
-	userService domain.UserService
+	userService    domain.UserService
+	imagekitClient *imagekit.Client
 }
 
-func NewUserHandler(userService domain.UserService) *UserHandler {
-	return &UserHandler{userService: userService}
+func NewUserHandler(userService domain.UserService, imagekitClient *imagekit.Client) *UserHandler {
+	return &UserHandler{
+		userService:    userService,
+		imagekitClient: imagekitClient,
+	}
 }
 
 type UpdateUserRequest struct {
-	Name      string  `json:"name"`
-	AvatarURL *string `json:"avatar_url"`
+	Name string `json:"name"`
 }
 
 func (h *UserHandler) GetProfile(c *fiber.Ctx) error {
@@ -69,6 +73,34 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 		return response.Unauthorized(c, "user not authenticated")
 	}
 
+	contentType := c.Get("Content-Type")
+	if contentType != "" && len(contentType) >= 19 && contentType[:19] == "multipart/form-data" {
+
+		file, err := c.FormFile("avatar")
+		if err != nil {
+			return response.BadRequest(c, "avatar file is required")
+		}
+
+		if err := h.imagekitClient.ValidateImage(file); err != nil {
+			return response.BadRequest(c, err.Error())
+		}
+
+		uploadResult, err := h.imagekitClient.UploadFile(c.UserContext(), file, "avatars")
+		if err != nil {
+			return response.InternalError(c, "failed to upload avatar: "+err.Error())
+		}
+
+		updatedUser, err := h.userService.UpdateAvatar(c.UserContext(), user.ID, uploadResult.URL)
+		if err != nil {
+			if errors.Is(err, service.ErrUserNotFound) {
+				return response.NotFound(c, "user not found")
+			}
+			return response.InternalError(c, err.Error())
+		}
+
+		return response.Success(c, fiber.StatusOK, "avatar updated", updatedUser)
+	}
+
 	var req UpdateUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		return response.BadRequest(c, "invalid request body")
@@ -78,7 +110,7 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 		return response.BadRequest(c, "name is required")
 	}
 
-	updatedUser, err := h.userService.Update(c.UserContext(), user.ID, req.Name, req.AvatarURL)
+	updatedUser, err := h.userService.Update(c.UserContext(), user.ID, req.Name)
 	if err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return response.NotFound(c, "user not found")

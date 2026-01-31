@@ -60,6 +60,7 @@ type UserRepository interface {
 	FindAll(ctx context.Context, limit, offset int) ([]User, error)
 	Count(ctx context.Context) (int64, error)
 	Update(ctx context.Context, user *User) error
+	UpdateAvatar(ctx context.Context, id uuid.UUID, avatarURL string) error
 	SoftDelete(ctx context.Context, id uuid.UUID) error
 	UpdateLastLogin(ctx context.Context, id uuid.UUID) error
 }
@@ -74,7 +75,8 @@ type CacheRepository interface {
 type UserService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
 	GetAll(ctx context.Context, page, limit int) (*PaginatedUsers, error)
-	Update(ctx context.Context, id uuid.UUID, name string, avatarURL *string) (*User, error)
+	Update(ctx context.Context, id uuid.UUID, name string) (*User, error)
+	UpdateAvatar(ctx context.Context, id uuid.UUID, avatarURL string) (*User, error)
 	Delete(ctx context.Context, id uuid.UUID, requestingUserRole Role) error
 }
 

@@ -102,10 +102,20 @@ func (r *userRepository) Count(ctx context.Context) (int64, error) {
 func (r *userRepository) Update(ctx context.Context, user *domain.User) error {
 	query := `
 		UPDATE users
-		SET name = $1, avatar_url = $2
-		WHERE id = $3 AND deleted_at IS NULL
+		SET name = $1
+		WHERE id = $2 AND deleted_at IS NULL
 	`
-	_, err := r.db.ExecContext(ctx, query, user.Name, user.AvatarURL, user.ID)
+	_, err := r.db.ExecContext(ctx, query, user.Name, user.ID)
+	return err
+}
+
+func (r *userRepository) UpdateAvatar(ctx context.Context, id uuid.UUID, avatarURL string) error {
+	query := `
+		UPDATE users
+		SET avatar_url = $1
+		WHERE id = $2 AND deleted_at IS NULL
+	`
+	_, err := r.db.ExecContext(ctx, query, avatarURL, id)
 	return err
 }
 
