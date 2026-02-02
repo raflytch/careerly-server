@@ -69,7 +69,8 @@ func main() {
 	resumeRepo := repository.NewResumeRepository(db)
 	interviewRepo := repository.NewInterviewRepository(db)
 
-	authService := service.NewAuthService(userRepo, cacheRepo, cfg.Google, jwtManager)
+	emailService := service.NewEmailService(cfg.SMTP)
+	authService := service.NewAuthService(userRepo, cacheRepo, emailService, cfg.Google, jwtManager)
 	userService := service.NewUserService(userRepo, cacheRepo)
 	planService := service.NewPlanService(planRepo, cacheRepo)
 	quotaService := service.NewQuotaService(subscriptionRepo, usageRepo)

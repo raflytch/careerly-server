@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/raflytch/careerly-server/internal/domain"
 
@@ -14,13 +13,10 @@ import (
 )
 
 const (
-	userCachePrefix   = "user:"
-	userListCacheKey  = "users:list"
-	userCacheDuration = 15 * time.Minute
+	userListCacheKey = "users:list"
 )
 
 var (
-	ErrUserNotFound    = errors.New("user not found")
 	ErrForbiddenAction = errors.New("only admin can perform this action")
 )
 
@@ -50,7 +46,7 @@ func (s *userService) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, 
 	user, err := s.userRepo.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrUserNotFound
+			return nil, domain.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -103,7 +99,7 @@ func (s *userService) Update(ctx context.Context, id uuid.UUID, name string) (*d
 	user, err := s.userRepo.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrUserNotFound
+			return nil, domain.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -125,7 +121,7 @@ func (s *userService) UpdateAvatar(ctx context.Context, id uuid.UUID, avatarURL 
 	user, err := s.userRepo.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrUserNotFound
+			return nil, domain.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -151,7 +147,7 @@ func (s *userService) Delete(ctx context.Context, id uuid.UUID, requestingUserRo
 	_, err := s.userRepo.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrUserNotFound
+			return domain.ErrUserNotFound
 		}
 		return err
 	}

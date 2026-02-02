@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
+	"strings"
 	"time"
 
 	"github.com/raflytch/careerly-server/internal/config"
@@ -18,6 +21,14 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+const (
+	userCachePrefix   = "user:"
+	userCacheDuration = 15 * time.Minute
+	otpCachePrefix    = "otp:restore:"
+	otpCacheDuration  = 15 * time.Minute
+	otpLength         = 6
+)
+
 var (
 	ErrFailedToExchangeToken = errors.New("failed to exchange token")
 	ErrFailedToGetUserInfo   = errors.New("failed to get user info")
@@ -25,15 +36,17 @@ var (
 )
 
 type authService struct {
-	userRepo    domain.UserRepository
-	cacheRepo   domain.CacheRepository
-	oauthConfig *oauth2.Config
-	jwtManager  *jwt.JWTManager
+	userRepo     domain.UserRepository
+	cacheRepo    domain.CacheRepository
+	emailService domain.EmailService
+	oauthConfig  *oauth2.Config
+	jwtManager   *jwt.JWTManager
 }
 
 func NewAuthService(
 	userRepo domain.UserRepository,
 	cacheRepo domain.CacheRepository,
+	emailService domain.EmailService,
 	cfg config.GoogleConfig,
 	jwtManager *jwt.JWTManager,
 ) domain.AuthService {
@@ -49,10 +62,11 @@ func NewAuthService(
 	}
 
 	return &authService{
-		userRepo:    userRepo,
-		cacheRepo:   cacheRepo,
-		oauthConfig: oauthConfig,
-		jwtManager:  jwtManager,
+		userRepo:     userRepo,
+		cacheRepo:    cacheRepo,
+		emailService: emailService,
+		oauthConfig:  oauthConfig,
+		jwtManager:   jwtManager,
 	}
 }
 
@@ -86,6 +100,11 @@ func (s *authService) HandleGoogleCallback(ctx context.Context, code string) (*d
 	user, err := s.userRepo.FindByGoogleID(ctx, googleUser.ID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			deletedUser, delErr := s.userRepo.FindDeletedByGoogleID(ctx, googleUser.ID)
+			if delErr == nil && deletedUser != nil {
+				return nil, domain.ErrUserDeleted
+			}
+
 			user = &domain.User{
 				ID:        uuid.New(),
 				GoogleID:  googleUser.ID,
@@ -97,6 +116,12 @@ func (s *authService) HandleGoogleCallback(ctx context.Context, code string) (*d
 				CreatedAt: time.Now(),
 			}
 			if err := s.userRepo.Create(ctx, user); err != nil {
+				if s.isDuplicateKeyError(err) {
+					deletedUser, delErr := s.userRepo.FindDeletedByGoogleID(ctx, googleUser.ID)
+					if delErr == nil && deletedUser != nil {
+						return nil, domain.ErrUserDeleted
+					}
+				}
 				return nil, err
 			}
 		} else {
@@ -156,4 +181,130 @@ func (s *authService) ValidateToken(ctx context.Context, tokenString string) (*d
 	_ = s.cacheRepo.Set(ctx, cacheKey, user, userCacheDuration)
 
 	return user, nil
+}
+
+func (s *authService) RequestRestoreOTP(ctx context.Context, email string) (*domain.OTPResponse, error) {
+	deletedUser, err := s.userRepo.FindDeletedByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNoDeletedUserFound
+		}
+		return nil, err
+	}
+
+	if deletedUser.DeletedAt == nil {
+		return nil, domain.ErrUserAlreadyActive
+	}
+
+	otpKey := fmt.Sprintf("%s%s", otpCachePrefix, email)
+	existingOTP, err := s.cacheRepo.Get(ctx, otpKey)
+	if err == nil && existingOTP != "" {
+		return nil, domain.ErrOTPAlreadySent
+	}
+
+	otp, err := s.generateOTP()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate OTP: %w", err)
+	}
+
+	if err := s.cacheRepo.Set(ctx, otpKey, otp, otpCacheDuration); err != nil {
+		return nil, fmt.Errorf("failed to store OTP: %w", err)
+	}
+
+	if err := s.emailService.SendOTP(ctx, email, otp); err != nil {
+		_ = s.cacheRepo.Delete(ctx, otpKey)
+		return nil, fmt.Errorf("failed to send OTP email: %w", err)
+	}
+
+	return &domain.OTPResponse{
+		Message:   "OTP has been sent to your email address",
+		ExpiresIn: int(otpCacheDuration.Seconds()),
+	}, nil
+}
+
+func (s *authService) VerifyRestoreOTP(ctx context.Context, email, otp string) (*domain.RestoreUserResponse, error) {
+	otpKey := fmt.Sprintf("%s%s", otpCachePrefix, email)
+	storedOTP, err := s.cacheRepo.Get(ctx, otpKey)
+	if err != nil {
+		return nil, domain.ErrInvalidOTP
+	}
+
+	storedOTP = strings.Trim(storedOTP, "\"")
+	if storedOTP != otp {
+		return nil, domain.ErrInvalidOTP
+	}
+
+	deletedUser, err := s.userRepo.FindDeletedByEmail(ctx, email)
+	if err != nil {
+		return nil, domain.ErrNoDeletedUserFound
+	}
+
+	if err := s.userRepo.Restore(ctx, deletedUser.ID); err != nil {
+		return nil, fmt.Errorf("failed to restore user: %w", err)
+	}
+
+	_ = s.cacheRepo.Delete(ctx, otpKey)
+
+	restoredUser, err := s.userRepo.FindByID(ctx, deletedUser.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch restored user: %w", err)
+	}
+
+	return &domain.RestoreUserResponse{
+		Message: "Your account has been successfully restored. You can now login again.",
+		User:    *restoredUser,
+	}, nil
+}
+
+func (s *authService) ResendRestoreOTP(ctx context.Context, email string) (*domain.OTPResponse, error) {
+	deletedUser, err := s.userRepo.FindDeletedByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNoDeletedUserFound
+		}
+		return nil, err
+	}
+
+	if deletedUser.DeletedAt == nil {
+		return nil, domain.ErrUserAlreadyActive
+	}
+
+	otpKey := fmt.Sprintf("%s%s", otpCachePrefix, email)
+	_ = s.cacheRepo.Delete(ctx, otpKey)
+
+	otp, err := s.generateOTP()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate OTP: %w", err)
+	}
+
+	if err := s.cacheRepo.Set(ctx, otpKey, otp, otpCacheDuration); err != nil {
+		return nil, fmt.Errorf("failed to store OTP: %w", err)
+	}
+
+	if err := s.emailService.SendOTP(ctx, email, otp); err != nil {
+		_ = s.cacheRepo.Delete(ctx, otpKey)
+		return nil, fmt.Errorf("failed to send OTP email: %w", err)
+	}
+
+	return &domain.OTPResponse{
+		Message:   "A new OTP has been sent to your email address",
+		ExpiresIn: int(otpCacheDuration.Seconds()),
+	}, nil
+}
+
+func (s *authService) generateOTP() (string, error) {
+	const digits = "0123456789"
+	otp := make([]byte, otpLength)
+	for i := 0; i < otpLength; i++ {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(digits))))
+		if err != nil {
+			return "", err
+		}
+		otp[i] = digits[n.Int64()]
+	}
+	return string(otp), nil
+}
+
+func (s *authService) isDuplicateKeyError(err error) bool {
+	return strings.Contains(err.Error(), "duplicate key value violates unique constraint")
 }

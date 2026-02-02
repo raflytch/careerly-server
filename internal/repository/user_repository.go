@@ -129,6 +129,44 @@ func (r *userRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+func (r *userRepository) FindDeletedByGoogleID(ctx context.Context, googleID string) (*domain.User, error) {
+	query := `
+		SELECT ` + userColumns + `
+		FROM users
+		WHERE google_id = $1 AND deleted_at IS NOT NULL
+	`
+	return r.scanUser(r.db.QueryRowContext(ctx, query, googleID))
+}
+
+func (r *userRepository) FindDeletedByEmail(ctx context.Context, email string) (*domain.User, error) {
+	query := `
+		SELECT ` + userColumns + `
+		FROM users
+		WHERE email = $1 AND deleted_at IS NOT NULL
+	`
+	return r.scanUser(r.db.QueryRowContext(ctx, query, email))
+}
+
+func (r *userRepository) Restore(ctx context.Context, id uuid.UUID) error {
+	query := `
+		UPDATE users
+		SET deleted_at = NULL, is_active = true
+		WHERE id = $1 AND deleted_at IS NOT NULL
+	`
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
 func (r *userRepository) UpdateLastLogin(ctx context.Context, id uuid.UUID) error {
 	query := `
 		UPDATE users

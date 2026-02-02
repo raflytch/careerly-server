@@ -46,7 +46,7 @@ func (h *UserHandler) GetByID(c *fiber.Ctx) error {
 
 	user, err := h.userService.GetByID(c.UserContext(), id)
 	if err != nil {
-		if errors.Is(err, service.ErrUserNotFound) {
+		if errors.Is(err, domain.ErrUserNotFound) {
 			return response.NotFound(c, "user not found")
 		}
 		return response.InternalError(c, err.Error())
@@ -92,7 +92,7 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 
 		updatedUser, err := h.userService.UpdateAvatar(c.UserContext(), user.ID, uploadResult.URL)
 		if err != nil {
-			if errors.Is(err, service.ErrUserNotFound) {
+			if errors.Is(err, domain.ErrUserNotFound) {
 				return response.NotFound(c, "user not found")
 			}
 			return response.InternalError(c, err.Error())
@@ -112,7 +112,7 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 
 	updatedUser, err := h.userService.Update(c.UserContext(), user.ID, req.Name)
 	if err != nil {
-		if errors.Is(err, service.ErrUserNotFound) {
+		if errors.Is(err, domain.ErrUserNotFound) {
 			return response.NotFound(c, "user not found")
 		}
 		return response.InternalError(c, err.Error())
@@ -139,7 +139,7 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 
 	err = h.userService.Delete(c.UserContext(), id, currentUser.Role)
 	if err != nil {
-		if errors.Is(err, service.ErrUserNotFound) {
+		if errors.Is(err, domain.ErrUserNotFound) {
 			return response.NotFound(c, "user not found")
 		}
 		if errors.Is(err, service.ErrForbiddenAction) {

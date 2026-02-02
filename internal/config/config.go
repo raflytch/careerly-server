@@ -13,11 +13,20 @@ type Config struct {
 	Google   GoogleConfig
 	ImageKit ImageKitConfig
 	GenAI    GenAIConfig
+	SMTP     SMTPConfig
 }
 
 type GenAIConfig struct {
 	APIKey string
 	Model  string
+}
+
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
 }
 
 type ImageKitConfig struct {
@@ -95,6 +104,13 @@ func Load() *Config {
 		GenAI: GenAIConfig{
 			APIKey: getEnv("GOOGLE_GEN_AI_API_KEY", ""),
 			Model:  getEnv("GOOGLE_GEN_AI_MODEL", "gemini-2.0-flash"),
+		},
+		SMTP: SMTPConfig{
+			Host:     getEnv("SMTP_HOST", "smtp.gmail.com"),
+			Port:     getEnvAsInt("SMTP_PORT", 587),
+			Username: getEnv("SMTP_USERNAME", ""),
+			Password: getEnv("SMTP_PASSWORD", ""),
+			From:     getEnv("SMTP_FROM", ""),
 		},
 	}
 }
