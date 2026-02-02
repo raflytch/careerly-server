@@ -67,12 +67,14 @@ func main() {
 	subscriptionRepo := repository.NewSubscriptionRepository(db)
 	usageRepo := repository.NewUsageRepository(db)
 	resumeRepo := repository.NewResumeRepository(db)
+	interviewRepo := repository.NewInterviewRepository(db)
 
 	authService := service.NewAuthService(userRepo, cacheRepo, cfg.Google, jwtManager)
 	userService := service.NewUserService(userRepo, cacheRepo)
 	planService := service.NewPlanService(planRepo, cacheRepo)
 	quotaService := service.NewQuotaService(subscriptionRepo, usageRepo)
 	resumeService := service.NewResumeService(resumeRepo, quotaService, genaiClient, cacheRepo)
+	interviewService := service.NewInterviewService(interviewRepo, quotaService, genaiClient)
 
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
@@ -80,6 +82,7 @@ func main() {
 	userHandler := handler.NewUserHandler(userService, imagekitClient)
 	planHandler := handler.NewPlanHandler(planService)
 	resumeHandler := handler.NewResumeHandler(resumeService, quotaService)
+	interviewHandler := handler.NewInterviewHandler(interviewService, quotaService)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "Careerly API",
@@ -98,10 +101,11 @@ func main() {
 	}))
 
 	routes.Setup(app, routes.Handlers{
-		Auth:   authHandler,
-		User:   userHandler,
-		Plan:   planHandler,
-		Resume: resumeHandler,
+		Auth:      authHandler,
+		User:      userHandler,
+		Plan:      planHandler,
+		Resume:    resumeHandler,
+		Interview: interviewHandler,
 	}, routes.Middlewares{
 		Auth: authMiddleware,
 	})
