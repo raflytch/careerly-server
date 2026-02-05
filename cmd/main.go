@@ -68,6 +68,7 @@ func main() {
 	usageRepo := repository.NewUsageRepository(db)
 	resumeRepo := repository.NewResumeRepository(db)
 	interviewRepo := repository.NewInterviewRepository(db)
+	atsCheckRepo := repository.NewATSCheckRepository(db)
 
 	emailService := service.NewEmailService(cfg.SMTP)
 	authService := service.NewAuthService(userRepo, cacheRepo, emailService, cfg.Google, jwtManager)
@@ -76,6 +77,7 @@ func main() {
 	quotaService := service.NewQuotaService(subscriptionRepo, usageRepo)
 	resumeService := service.NewResumeService(resumeRepo, quotaService, genaiClient, cacheRepo)
 	interviewService := service.NewInterviewService(interviewRepo, quotaService, genaiClient)
+	atsCheckService := service.NewATSCheckService(atsCheckRepo, quotaService, genaiClient)
 
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
@@ -84,6 +86,7 @@ func main() {
 	planHandler := handler.NewPlanHandler(planService)
 	resumeHandler := handler.NewResumeHandler(resumeService, quotaService)
 	interviewHandler := handler.NewInterviewHandler(interviewService, quotaService)
+	atsCheckHandler := handler.NewATSCheckHandler(atsCheckService, quotaService)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "Careerly API",
@@ -107,6 +110,7 @@ func main() {
 		Plan:      planHandler,
 		Resume:    resumeHandler,
 		Interview: interviewHandler,
+		ATSCheck:  atsCheckHandler,
 	}, routes.Middlewares{
 		Auth: authMiddleware,
 	})

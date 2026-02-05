@@ -13,6 +13,7 @@ type Handlers struct {
 	Plan      *handler.PlanHandler
 	Resume    *handler.ResumeHandler
 	Interview *handler.InterviewHandler
+	ATSCheck  *handler.ATSCheckHandler
 }
 
 type Middlewares struct {
@@ -29,6 +30,7 @@ func Setup(app *fiber.App, handlers Handlers, middlewares Middlewares) {
 	setupPlanRoutes(api, handlers.Plan, middlewares.Auth)
 	setupResumeRoutes(api, handlers.Resume, middlewares.Auth)
 	setupInterviewRoutes(api, handlers.Interview, middlewares.Auth)
+	setupATSCheckRoutes(api, handlers.ATSCheck, middlewares.Auth)
 }
 
 func healthCheck(c *fiber.Ctx) error {
