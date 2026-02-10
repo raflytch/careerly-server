@@ -14,6 +14,14 @@ type Config struct {
 	ImageKit ImageKitConfig
 	GenAI    GenAIConfig
 	SMTP     SMTPConfig
+	Midtrans MidtransConfig
+}
+
+type MidtransConfig struct {
+	ServerKey  string
+	ClientKey  string
+	IsSandbox  bool
+	MerchantID string
 }
 
 type GenAIConfig struct {
@@ -112,6 +120,12 @@ func Load() *Config {
 			Password: getEnv("SMTP_PASSWORD", ""),
 			From:     getEnv("SMTP_FROM", ""),
 		},
+		Midtrans: MidtransConfig{
+			ServerKey:  getEnv("MIDTRANS_SERVER_KEY", ""),
+			ClientKey:  getEnv("MIDTRANS_CLIENT_KEY", ""),
+			IsSandbox:  getEnvAsBool("MIDTRANS_IS_SANDBOX", true),
+			MerchantID: getEnv("MIDTRANS_MERCHANT_ID", ""),
+		},
 	}
 }
 
@@ -126,6 +140,15 @@ func getEnvAsInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue

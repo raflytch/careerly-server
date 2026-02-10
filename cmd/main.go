@@ -14,6 +14,7 @@ import (
 	"github.com/raflytch/careerly-server/pkg/genai"
 	"github.com/raflytch/careerly-server/pkg/imagekit"
 	"github.com/raflytch/careerly-server/pkg/jwt"
+	"github.com/raflytch/careerly-server/pkg/midtrans"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -61,6 +62,21 @@ func main() {
 		}
 	}
 
+	// Initialize Midtrans client for payment gateway
+	var midtransClient *midtrans.Client
+	if cfg.Midtrans.ServerKey != "" {
+		midtransClient = midtrans.NewClient(midtrans.Config{
+			ServerKey:  cfg.Midtrans.ServerKey,
+			ClientKey:  cfg.Midtrans.ClientKey,
+			IsSandbox:  cfg.Midtrans.IsSandbox,
+			MerchantID: cfg.Midtrans.MerchantID,
+		})
+		log.Println("Midtrans client initialized")
+	} else {
+		log.Println("Warning: Midtrans server key not configured, payment features disabled")
+	}
+
+	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
 	cacheRepo := repository.NewCacheRepository(redisClient)
 	planRepo := repository.NewPlanRepository(db)
@@ -69,7 +85,9 @@ func main() {
 	resumeRepo := repository.NewResumeRepository(db)
 	interviewRepo := repository.NewInterviewRepository(db)
 	atsCheckRepo := repository.NewATSCheckRepository(db)
+	transactionRepo := repository.NewTransactionRepository(db)
 
+	// Initialize services
 	emailService := service.NewEmailService(cfg.SMTP)
 	authService := service.NewAuthService(userRepo, cacheRepo, emailService, cfg.Google, jwtManager)
 	userService := service.NewUserService(userRepo, cacheRepo)
@@ -78,15 +96,26 @@ func main() {
 	resumeService := service.NewResumeService(resumeRepo, quotaService, genaiClient, cacheRepo)
 	interviewService := service.NewInterviewService(interviewRepo, quotaService, genaiClient)
 	atsCheckService := service.NewATSCheckService(atsCheckRepo, quotaService, genaiClient)
+	transactionService := service.NewTransactionService(
+		transactionRepo,
+		planRepo,
+		subscriptionRepo,
+		userRepo,
+		cacheRepo,
+		midtransClient,
+	)
 
+	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
+	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(userService, imagekitClient)
 	planHandler := handler.NewPlanHandler(planService)
 	resumeHandler := handler.NewResumeHandler(resumeService, quotaService)
 	interviewHandler := handler.NewInterviewHandler(interviewService, quotaService)
 	atsCheckHandler := handler.NewATSCheckHandler(atsCheckService, quotaService)
+	transactionHandler := handler.NewTransactionHandler(transactionService)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "Careerly API",
@@ -105,12 +134,13 @@ func main() {
 	}))
 
 	routes.Setup(app, routes.Handlers{
-		Auth:      authHandler,
-		User:      userHandler,
-		Plan:      planHandler,
-		Resume:    resumeHandler,
-		Interview: interviewHandler,
-		ATSCheck:  atsCheckHandler,
+		Auth:        authHandler,
+		User:        userHandler,
+		Plan:        planHandler,
+		Resume:      resumeHandler,
+		Interview:   interviewHandler,
+		ATSCheck:    atsCheckHandler,
+		Transaction: transactionHandler,
 	}, routes.Middlewares{
 		Auth: authMiddleware,
 	})

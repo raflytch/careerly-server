@@ -11,6 +11,7 @@ require (
 	github.com/imagekit-developer/imagekit-go/v2 v2.1.1
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
+	github.com/midtrans/midtrans-go v1.3.8
 	github.com/redis/go-redis/v9 v9.4.0
 	github.com/shopspring/decimal v1.4.0
 	golang.org/x/oauth2 v0.23.0
