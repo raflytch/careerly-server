@@ -15,10 +15,8 @@ import (
 )
 
 const (
-	// Cache key prefixes for transaction caching
-	transactionCachePrefix  = "transaction:"
-	transactionListCacheKey = "transactions:list"
-	// Transaction expiry duration (24 hours)
+	transactionCachePrefix   = "transaction:"
+	transactionListCacheKey  = "transactions:list"
 	defaultTransactionExpiry = 24 * time.Hour
 )
 
@@ -40,7 +38,6 @@ type transactionService struct {
 	midtransClient   *midtrans.Client
 }
 
-// NewTransactionService creates a new transaction service instance
 func NewTransactionService(
 	transactionRepo domain.TransactionRepository,
 	planRepo domain.PlanRepository,
@@ -59,10 +56,7 @@ func NewTransactionService(
 	}
 }
 
-// CreateTransaction creates a new transaction and generates Snap token for payment
-// SECURITY: Validates plan price from database, never trusts frontend amount
 func (s *transactionService) CreateTransaction(ctx context.Context, userID uuid.UUID, req *domain.CreateTransactionRequest) (*domain.TransactionResponse, error) {
-	// Fetch plan from database - NEVER trust frontend price
 	plan, err := s.planRepo.FindByID(ctx, req.PlanID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -71,40 +65,32 @@ func (s *transactionService) CreateTransaction(ctx context.Context, userID uuid.
 		return nil, fmt.Errorf("failed to fetch plan: %w", err)
 	}
 
-	// Validate plan is active and purchasable
 	if !plan.IsActive {
 		return nil, ErrPlanNotAvailable
 	}
 
-	// Check if plan is free (price = 0), no transaction needed
 	if plan.Price.IsZero() {
 		return nil, errors.New("free plans do not require payment")
 	}
 
-	// Check for existing active subscription for this plan
 	existingSub, _ := s.subscriptionRepo.FindActiveByUserID(ctx, userID)
 	if existingSub != nil && existingSub.PlanID == req.PlanID {
 		return nil, ErrActiveSubscriptionExists
 	}
 
-	// Fetch user details for customer info
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch user: %w", err)
 	}
 
-	// Generate unique order ID with timestamp for idempotency
-	// Format: CAREERLY-{planID_short}-{userID_short}-{timestamp}
 	orderID := fmt.Sprintf("CAREERLY-%s-%s-%d",
 		plan.ID.String()[:8],
 		userID.String()[:8],
 		time.Now().UnixMilli(),
 	)
 
-	// Use plan price from database (TRUSTED SOURCE)
-	grossAmount := plan.Price.IntPart() // Convert decimal to int64 for Midtrans
+	grossAmount := plan.Price.IntPart()
 
-	// Create Midtrans Snap transaction
 	midtransReq := midtrans.CreateTransactionRequest{
 		OrderID:     orderID,
 		GrossAmount: grossAmount,
@@ -127,16 +113,14 @@ func (s *transactionService) CreateTransaction(ctx context.Context, userID uuid.
 		return nil, fmt.Errorf("failed to create midtrans transaction: %w", err)
 	}
 
-	// Calculate expiry time (24 hours from now)
 	expiryTime := time.Now().Add(defaultTransactionExpiry)
 
-	// Create transaction record in database
 	transaction := &domain.Transaction{
 		ID:          uuid.New(),
 		UserID:      userID,
 		PlanID:      plan.ID,
 		OrderID:     orderID,
-		GrossAmount: plan.Price, // Store exact plan price
+		GrossAmount: plan.Price,
 		Status:      domain.TransactionStatusPending,
 		SnapToken:   &snapResp.Token,
 		RedirectURL: &snapResp.RedirectURL,
@@ -149,7 +133,6 @@ func (s *transactionService) CreateTransaction(ctx context.Context, userID uuid.
 		return nil, fmt.Errorf("failed to create transaction record: %w", err)
 	}
 
-	// Attach plan info for response
 	transaction.Plan = plan
 
 	return &domain.TransactionResponse{
@@ -159,7 +142,6 @@ func (s *transactionService) CreateTransaction(ctx context.Context, userID uuid.
 	}, nil
 }
 
-// GetByID retrieves a transaction by ID, ensuring it belongs to the requesting user
 func (s *transactionService) GetByID(ctx context.Context, userID uuid.UUID, id uuid.UUID) (*domain.Transaction, error) {
 	transaction, err := s.transactionRepo.FindByID(ctx, id)
 	if err != nil {
@@ -169,7 +151,6 @@ func (s *transactionService) GetByID(ctx context.Context, userID uuid.UUID, id u
 		return nil, err
 	}
 
-	// Security check: ensure transaction belongs to the requesting user
 	if transaction.UserID != userID {
 		return nil, ErrTransactionNotFound
 	}
@@ -177,7 +158,6 @@ func (s *transactionService) GetByID(ctx context.Context, userID uuid.UUID, id u
 	return transaction, nil
 }
 
-// GetByOrderID retrieves a transaction by Midtrans order ID
 func (s *transactionService) GetByOrderID(ctx context.Context, orderID string) (*domain.Transaction, error) {
 	transaction, err := s.transactionRepo.FindByOrderID(ctx, orderID)
 	if err != nil {
@@ -189,9 +169,7 @@ func (s *transactionService) GetByOrderID(ctx context.Context, orderID string) (
 	return transaction, nil
 }
 
-// GetUserTransactions retrieves all transactions for a user with pagination
 func (s *transactionService) GetUserTransactions(ctx context.Context, userID uuid.UUID, page, limit int) (*domain.PaginatedTransactions, error) {
-	// Validate and normalize pagination parameters
 	if page < 1 {
 		page = 1
 	}
@@ -204,19 +182,16 @@ func (s *transactionService) GetUserTransactions(ctx context.Context, userID uui
 
 	offset := (page - 1) * limit
 
-	// Get total count for pagination
 	total, err := s.transactionRepo.CountByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count transactions: %w", err)
 	}
 
-	// Fetch transactions
 	transactions, err := s.transactionRepo.FindByUserID(ctx, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch transactions: %w", err)
 	}
 
-	// Calculate total pages
 	totalPages := int(total) / limit
 	if int(total)%limit > 0 {
 		totalPages++
@@ -233,10 +208,7 @@ func (s *transactionService) GetUserTransactions(ctx context.Context, userID uui
 	}, nil
 }
 
-// HandleWebhook processes Midtrans webhook notification
-// This is called when Midtrans sends payment status updates
 func (s *transactionService) HandleWebhook(ctx context.Context, payload map[string]interface{}) error {
-	// Extract required fields from payload
 	orderID, ok := payload["order_id"].(string)
 	if !ok || orderID == "" {
 		return errors.New("missing order_id in webhook payload")
@@ -246,15 +218,12 @@ func (s *transactionService) HandleWebhook(ctx context.Context, payload map[stri
 	grossAmount, _ := payload["gross_amount"].(string)
 	signatureKey, _ := payload["signature_key"].(string)
 
-	// Verify webhook signature to prevent tampering
-	// Skip verification if signature is empty (sandbox mode may not send it)
 	if signatureKey != "" {
 		if !s.midtransClient.VerifySignatureKey(orderID, statusCode, grossAmount, signatureKey) {
 			return ErrInvalidSignature
 		}
 	}
 
-	// Find transaction in our database first
 	transaction, err := s.transactionRepo.FindByOrderID(ctx, orderID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -263,39 +232,31 @@ func (s *transactionService) HandleWebhook(ctx context.Context, payload map[stri
 		return fmt.Errorf("failed to find transaction: %w", err)
 	}
 
-	// Skip if transaction is already in final state
 	if transaction.Status == domain.TransactionStatusSuccess ||
 		transaction.Status == domain.TransactionStatusFailed {
 		return nil
 	}
 
-	// Fetch transaction from Midtrans Core API for verification
-	// IMPORTANT: Never trust webhook payload directly for status changes
 	statusResp, err := s.midtransClient.CheckTransaction(orderID)
 	if err != nil {
 		return fmt.Errorf("failed to verify transaction with midtrans: %w", err)
 	}
 
-	// Update transaction with Midtrans response data
 	transaction.TransactionID = &statusResp.TransactionID
 	transaction.PaymentType = &statusResp.PaymentType
 	transaction.TransactionStatus = &statusResp.TransactionStatus
 	transaction.FraudStatus = &statusResp.FraudStatus
 
-	// Store raw Midtrans response for audit trail
 	responseJSON, _ := json.Marshal(payload)
 	transaction.MidtransResponse = responseJSON
 
-	// Determine our internal status based on Midtrans status
 	newStatus := s.mapMidtransStatus(statusResp.TransactionStatus, statusResp.FraudStatus)
 	transaction.Status = newStatus
 
-	// If payment is successful, create subscription and update transaction
 	if newStatus == domain.TransactionStatusSuccess {
 		now := time.Now()
 		transaction.PaidAt = &now
 
-		// Create subscription for the user only if not already created
 		if transaction.SubscriptionID == nil {
 			subscriptionID, err := s.createSubscription(ctx, transaction)
 			if err != nil {
@@ -305,20 +266,16 @@ func (s *transactionService) HandleWebhook(ctx context.Context, payload map[stri
 		}
 	}
 
-	// Update transaction in database
 	if err := s.transactionRepo.Update(ctx, transaction); err != nil {
 		return fmt.Errorf("failed to update transaction: %w", err)
 	}
 
-	// Invalidate any cached data
 	s.invalidateCache(ctx, transaction.ID)
 
 	return nil
 }
 
-// CheckTransactionStatus manually checks and updates transaction status from Midtrans
 func (s *transactionService) CheckTransactionStatus(ctx context.Context, orderID string) (*domain.Transaction, error) {
-	// Fetch transaction from our database
 	transaction, err := s.transactionRepo.FindByOrderID(ctx, orderID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -327,29 +284,24 @@ func (s *transactionService) CheckTransactionStatus(ctx context.Context, orderID
 		return nil, err
 	}
 
-	// Skip check if transaction is already in final state
 	if transaction.Status == domain.TransactionStatusSuccess ||
 		transaction.Status == domain.TransactionStatusFailed {
 		return transaction, nil
 	}
 
-	// Check status with Midtrans Core API
 	statusResp, err := s.midtransClient.CheckTransaction(orderID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check transaction status: %w", err)
 	}
 
-	// Update transaction with fresh Midtrans data
 	transaction.TransactionID = &statusResp.TransactionID
 	transaction.PaymentType = &statusResp.PaymentType
 	transaction.TransactionStatus = &statusResp.TransactionStatus
 	transaction.FraudStatus = &statusResp.FraudStatus
 
-	// Map Midtrans status to our internal status
 	newStatus := s.mapMidtransStatus(statusResp.TransactionStatus, statusResp.FraudStatus)
 	transaction.Status = newStatus
 
-	// Handle successful payment
 	if newStatus == domain.TransactionStatusSuccess && transaction.SubscriptionID == nil {
 		now := time.Now()
 		transaction.PaidAt = &now
@@ -361,7 +313,6 @@ func (s *transactionService) CheckTransactionStatus(ctx context.Context, orderID
 		transaction.SubscriptionID = &subscriptionID
 	}
 
-	// Persist updates
 	if err := s.transactionRepo.Update(ctx, transaction); err != nil {
 		return nil, fmt.Errorf("failed to update transaction: %w", err)
 	}
@@ -369,16 +320,13 @@ func (s *transactionService) CheckTransactionStatus(ctx context.Context, orderID
 	return transaction, nil
 }
 
-// createSubscription creates a new subscription when payment is successful
 func (s *transactionService) createSubscription(ctx context.Context, transaction *domain.Transaction) (uuid.UUID, error) {
-	// Fetch plan to get duration
 	plan, err := s.planRepo.FindByID(ctx, transaction.PlanID)
 	if err != nil {
 		return uuid.Nil, err
 	}
 
-	// Calculate subscription duration
-	durationDays := 30 // Default 30 days
+	durationDays := 30
 	if plan.DurationDays != nil {
 		durationDays = *plan.DurationDays
 	}
@@ -386,14 +334,12 @@ func (s *transactionService) createSubscription(ctx context.Context, transaction
 	now := time.Now()
 	endDate := now.AddDate(0, 0, durationDays)
 
-	// Cancel any existing active subscription for this user
 	existingSub, _ := s.subscriptionRepo.FindActiveByUserID(ctx, transaction.UserID)
 	if existingSub != nil {
 		existingSub.Status = domain.SubscriptionStatusCanceled
 		_ = s.subscriptionRepo.Update(ctx, existingSub)
 	}
 
-	// Create new subscription
 	subscription := &domain.Subscription{
 		ID:        uuid.New(),
 		UserID:    transaction.UserID,
@@ -411,40 +357,30 @@ func (s *transactionService) createSubscription(ctx context.Context, transaction
 	return subscription.ID, nil
 }
 
-// mapMidtransStatus maps Midtrans transaction status to our internal status
-// Reference: https://docs.midtrans.com/docs/https-notification-webhooks
 func (s *transactionService) mapMidtransStatus(transactionStatus, fraudStatus string) domain.TransactionStatus {
 	switch transactionStatus {
 	case "capture":
-		// For credit card, check fraud status
 		if fraudStatus == "accept" {
 			return domain.TransactionStatusSuccess
 		}
-		// "challenge" status requires manual review - keep as pending
 		return domain.TransactionStatusPending
 
 	case "settlement":
-		// Payment has been settled (final success state)
 		return domain.TransactionStatusSuccess
 
 	case "pending":
-		// Waiting for customer to complete payment
 		return domain.TransactionStatusPending
 
 	case "deny":
-		// Transaction denied (but may allow retry)
 		return domain.TransactionStatusFailed
 
 	case "cancel":
-		// Transaction cancelled
 		return domain.TransactionStatusCancel
 
 	case "expire":
-		// Transaction expired
 		return domain.TransactionStatusExpired
 
 	case "refund", "partial_refund":
-		// Refunded transactions - treat as failed for our purposes
 		return domain.TransactionStatusFailed
 
 	default:
@@ -452,7 +388,6 @@ func (s *transactionService) mapMidtransStatus(transactionStatus, fraudStatus st
 	}
 }
 
-// invalidateCache removes cached transaction data
 func (s *transactionService) invalidateCache(ctx context.Context, transactionID uuid.UUID) {
 	cacheKey := fmt.Sprintf("%s%s", transactionCachePrefix, transactionID.String())
 	_ = s.cacheRepo.Delete(ctx, cacheKey)

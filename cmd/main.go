@@ -90,7 +90,7 @@ func main() {
 	// Initialize services
 	emailService := service.NewEmailService(cfg.SMTP)
 	authService := service.NewAuthService(userRepo, cacheRepo, emailService, cfg.Google, jwtManager)
-	userService := service.NewUserService(userRepo, cacheRepo, subscriptionRepo, usageRepo)
+	userService := service.NewUserService(userRepo, cacheRepo, subscriptionRepo, usageRepo, emailService)
 	planService := service.NewPlanService(planRepo, cacheRepo)
 	quotaService := service.NewQuotaService(subscriptionRepo, usageRepo)
 	resumeService := service.NewResumeService(resumeRepo, quotaService, genaiClient, cacheRepo)

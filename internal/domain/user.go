@@ -22,6 +22,7 @@ var (
 	ErrOTPAlreadySent     = errors.New("OTP already sent, please wait before requesting again")
 	ErrNoDeletedUserFound = errors.New("no deleted account found with this email")
 	ErrUserAlreadyActive  = errors.New("user account is already active")
+	ErrCannotDeleteAdmin  = errors.New("admin account cannot be self-deleted")
 )
 
 type User struct {
@@ -81,6 +82,10 @@ type PaginatedUsers struct {
 	Pagination Pagination `json:"pagination"`
 }
 
+type DeleteAccountResponse struct {
+	Message string `json:"message"`
+}
+
 type UserProfileResponse struct {
 	User         User          `json:"user"`
 	Subscription *Subscription `json:"subscription"`
@@ -117,6 +122,9 @@ type UserService interface {
 	Update(ctx context.Context, id uuid.UUID, name string) (*User, error)
 	UpdateAvatar(ctx context.Context, id uuid.UUID, avatarURL string) (*User, error)
 	Delete(ctx context.Context, id uuid.UUID, requestingUserRole Role) error
+	RequestDeleteOTP(ctx context.Context, user *User) (*OTPResponse, error)
+	VerifyDeleteOTP(ctx context.Context, user *User, otp string) (*DeleteAccountResponse, error)
+	ResendDeleteOTP(ctx context.Context, user *User) (*OTPResponse, error)
 }
 
 type AuthService interface {
@@ -130,4 +138,5 @@ type AuthService interface {
 
 type EmailService interface {
 	SendOTP(ctx context.Context, email, otp string) error
+	SendDeleteOTP(ctx context.Context, email, otp string) error
 }

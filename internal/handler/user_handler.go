@@ -156,3 +156,73 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 
 	return response.Success(c, fiber.StatusOK, "user deleted", nil)
 }
+
+func (h *UserHandler) RequestDeleteOTP(c *fiber.Ctx) error {
+	user := middleware.GetUserFromContext(c)
+	if user == nil {
+		return response.Unauthorized(c, "user not authenticated")
+	}
+
+	otpResponse, err := h.userService.RequestDeleteOTP(c.UserContext(), user)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrCannotDeleteAdmin):
+			return response.Forbidden(c, err.Error())
+		case errors.Is(err, domain.ErrOTPAlreadySent):
+			return response.Error(c, fiber.StatusTooManyRequests, err.Error())
+		default:
+			return response.InternalError(c, err.Error())
+		}
+	}
+
+	return response.Success(c, fiber.StatusOK, "OTP sent successfully", otpResponse)
+}
+
+func (h *UserHandler) VerifyDeleteOTP(c *fiber.Ctx) error {
+	user := middleware.GetUserFromContext(c)
+	if user == nil {
+		return response.Unauthorized(c, "user not authenticated")
+	}
+
+	var req domain.OTPVerifyRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.BadRequest(c, "invalid request body")
+	}
+
+	if req.OTP == "" || len(req.OTP) != 6 {
+		return response.BadRequest(c, "OTP must be 6 digits")
+	}
+
+	deleteResponse, err := h.userService.VerifyDeleteOTP(c.UserContext(), user, req.OTP)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrInvalidOTP):
+			return response.BadRequest(c, err.Error())
+		case errors.Is(err, domain.ErrCannotDeleteAdmin):
+			return response.Forbidden(c, err.Error())
+		default:
+			return response.InternalError(c, err.Error())
+		}
+	}
+
+	return response.Success(c, fiber.StatusOK, "account deleted successfully", deleteResponse)
+}
+
+func (h *UserHandler) ResendDeleteOTP(c *fiber.Ctx) error {
+	user := middleware.GetUserFromContext(c)
+	if user == nil {
+		return response.Unauthorized(c, "user not authenticated")
+	}
+
+	otpResponse, err := h.userService.ResendDeleteOTP(c.UserContext(), user)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrCannotDeleteAdmin):
+			return response.Forbidden(c, err.Error())
+		default:
+			return response.InternalError(c, err.Error())
+		}
+	}
+
+	return response.Success(c, fiber.StatusOK, "OTP resent successfully", otpResponse)
+}

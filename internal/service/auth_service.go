@@ -2,13 +2,11 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"strings"
 	"time"
 
@@ -202,7 +200,7 @@ func (s *authService) RequestRestoreOTP(ctx context.Context, email string) (*dom
 		return nil, domain.ErrOTPAlreadySent
 	}
 
-	otp, err := s.generateOTP()
+	otp, err := GenerateOTP(otpLength)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate OTP: %w", err)
 	}
@@ -272,7 +270,7 @@ func (s *authService) ResendRestoreOTP(ctx context.Context, email string) (*doma
 	otpKey := fmt.Sprintf("%s%s", otpCachePrefix, email)
 	_ = s.cacheRepo.Delete(ctx, otpKey)
 
-	otp, err := s.generateOTP()
+	otp, err := GenerateOTP(otpLength)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate OTP: %w", err)
 	}
@@ -290,19 +288,6 @@ func (s *authService) ResendRestoreOTP(ctx context.Context, email string) (*doma
 		Message:   "A new OTP has been sent to your email address",
 		ExpiresIn: int(otpCacheDuration.Seconds()),
 	}, nil
-}
-
-func (s *authService) generateOTP() (string, error) {
-	const digits = "0123456789"
-	otp := make([]byte, otpLength)
-	for i := 0; i < otpLength; i++ {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(digits))))
-		if err != nil {
-			return "", err
-		}
-		otp[i] = digits[n.Int64()]
-	}
-	return string(otp), nil
 }
 
 func (s *authService) isDuplicateKeyError(err error) bool {

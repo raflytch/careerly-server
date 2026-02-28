@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/raflytch/careerly-server/internal/domain"
 
@@ -13,7 +14,10 @@ import (
 )
 
 const (
-	userListCacheKey = "users:list"
+	userListCacheKey  = "users:list"
+	deleteOTPPrefix   = "otp:delete:"
+	deleteOTPDuration = userCacheDuration
+	deleteOTPLength   = 6
 )
 
 var (
@@ -25,14 +29,16 @@ type userService struct {
 	cacheRepo        domain.CacheRepository
 	subscriptionRepo domain.SubscriptionRepository
 	usageRepo        domain.UsageRepository
+	emailService     domain.EmailService
 }
 
-func NewUserService(userRepo domain.UserRepository, cacheRepo domain.CacheRepository, subscriptionRepo domain.SubscriptionRepository, usageRepo domain.UsageRepository) domain.UserService {
+func NewUserService(userRepo domain.UserRepository, cacheRepo domain.CacheRepository, subscriptionRepo domain.SubscriptionRepository, usageRepo domain.UsageRepository, emailService domain.EmailService) domain.UserService {
 	return &userService{
 		userRepo:         userRepo,
 		cacheRepo:        cacheRepo,
 		subscriptionRepo: subscriptionRepo,
 		usageRepo:        usageRepo,
+		emailService:     emailService,
 	}
 }
 
@@ -192,4 +198,94 @@ func (s *userService) Delete(ctx context.Context, id uuid.UUID, requestingUserRo
 	_ = s.cacheRepo.DeleteByPattern(ctx, userListCacheKey+"*")
 
 	return nil
+}
+
+func (s *userService) RequestDeleteOTP(ctx context.Context, user *domain.User) (*domain.OTPResponse, error) {
+	if user.Role == domain.RoleAdmin {
+		return nil, domain.ErrCannotDeleteAdmin
+	}
+
+	otpKey := fmt.Sprintf("%s%s", deleteOTPPrefix, user.Email)
+	existingOTP, err := s.cacheRepo.Get(ctx, otpKey)
+	if err == nil && existingOTP != "" {
+		return nil, domain.ErrOTPAlreadySent
+	}
+
+	otp, err := GenerateOTP(deleteOTPLength)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate OTP: %w", err)
+	}
+
+	if err := s.cacheRepo.Set(ctx, otpKey, otp, deleteOTPDuration); err != nil {
+		return nil, fmt.Errorf("failed to store OTP: %w", err)
+	}
+
+	if err := s.emailService.SendDeleteOTP(ctx, user.Email, otp); err != nil {
+		_ = s.cacheRepo.Delete(ctx, otpKey)
+		return nil, fmt.Errorf("failed to send OTP email: %w", err)
+	}
+
+	return &domain.OTPResponse{
+		Message:   "OTP has been sent to your email address",
+		ExpiresIn: int(deleteOTPDuration.Seconds()),
+	}, nil
+}
+
+func (s *userService) VerifyDeleteOTP(ctx context.Context, user *domain.User, otp string) (*domain.DeleteAccountResponse, error) {
+	if user.Role == domain.RoleAdmin {
+		return nil, domain.ErrCannotDeleteAdmin
+	}
+
+	otpKey := fmt.Sprintf("%s%s", deleteOTPPrefix, user.Email)
+	storedOTP, err := s.cacheRepo.Get(ctx, otpKey)
+	if err != nil {
+		return nil, domain.ErrInvalidOTP
+	}
+
+	storedOTP = strings.Trim(storedOTP, "\"")
+	if storedOTP != otp {
+		return nil, domain.ErrInvalidOTP
+	}
+
+	if err := s.userRepo.SoftDelete(ctx, user.ID); err != nil {
+		return nil, fmt.Errorf("failed to delete account: %w", err)
+	}
+
+	_ = s.cacheRepo.Delete(ctx, otpKey)
+
+	cacheKey := fmt.Sprintf("%s%s", userCachePrefix, user.ID.String())
+	_ = s.cacheRepo.Delete(ctx, cacheKey)
+	_ = s.cacheRepo.DeleteByPattern(ctx, userListCacheKey+"*")
+
+	return &domain.DeleteAccountResponse{
+		Message: "your account has been successfully deleted",
+	}, nil
+}
+
+func (s *userService) ResendDeleteOTP(ctx context.Context, user *domain.User) (*domain.OTPResponse, error) {
+	if user.Role == domain.RoleAdmin {
+		return nil, domain.ErrCannotDeleteAdmin
+	}
+
+	otpKey := fmt.Sprintf("%s%s", deleteOTPPrefix, user.Email)
+	_ = s.cacheRepo.Delete(ctx, otpKey)
+
+	otp, err := GenerateOTP(deleteOTPLength)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate OTP: %w", err)
+	}
+
+	if err := s.cacheRepo.Set(ctx, otpKey, otp, deleteOTPDuration); err != nil {
+		return nil, fmt.Errorf("failed to store OTP: %w", err)
+	}
+
+	if err := s.emailService.SendDeleteOTP(ctx, user.Email, otp); err != nil {
+		_ = s.cacheRepo.Delete(ctx, otpKey)
+		return nil, fmt.Errorf("failed to send OTP email: %w", err)
+	}
+
+	return &domain.OTPResponse{
+		Message:   "a new OTP has been sent to your email address",
+		ExpiresIn: int(deleteOTPDuration.Seconds()),
+	}, nil
 }

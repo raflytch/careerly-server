@@ -13,6 +13,12 @@ func setupUserRoutes(router fiber.Router, h *handler.UserHandler, authMiddleware
 
 	users.Get("/profile", h.GetProfile)
 	users.Put("/profile", h.Update)
+
+	deleteAccount := users.Group("/delete")
+	deleteAccount.Post("/request-otp", h.RequestDeleteOTP)
+	deleteAccount.Post("/verify-otp", h.VerifyDeleteOTP)
+	deleteAccount.Post("/resend-otp", h.ResendDeleteOTP)
+
 	users.Get("/", middleware.RequireAdmin(), h.GetAll)
 	users.Get("/:id", middleware.RequireAdmin(), h.GetByID)
 	users.Delete("/:id", middleware.RequireAdmin(), h.Delete)
