@@ -16,12 +16,12 @@ const (
 )
 
 var (
-	ErrUserNotFound         = errors.New("user not found")
-	ErrUserDeleted          = errors.New("user account has been deleted, please restore your account")
-	ErrInvalidOTP           = errors.New("invalid or expired OTP")
-	ErrOTPAlreadySent       = errors.New("OTP already sent, please wait before requesting again")
-	ErrNoDeletedUserFound   = errors.New("no deleted account found with this email")
-	ErrUserAlreadyActive    = errors.New("user account is already active")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrUserDeleted        = errors.New("user account has been deleted, please restore your account")
+	ErrInvalidOTP         = errors.New("invalid or expired OTP")
+	ErrOTPAlreadySent     = errors.New("OTP already sent, please wait before requesting again")
+	ErrNoDeletedUserFound = errors.New("no deleted account found with this email")
+	ErrUserAlreadyActive  = errors.New("user account is already active")
 )
 
 type User struct {
@@ -81,6 +81,12 @@ type PaginatedUsers struct {
 	Pagination Pagination `json:"pagination"`
 }
 
+type UserProfileResponse struct {
+	User         User          `json:"user"`
+	Subscription *Subscription `json:"subscription"`
+	Usage        []Usage       `json:"usage"`
+}
+
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	FindByID(ctx context.Context, id uuid.UUID) (*User, error)
@@ -106,6 +112,7 @@ type CacheRepository interface {
 
 type UserService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
+	GetProfile(ctx context.Context, id uuid.UUID) (*UserProfileResponse, error)
 	GetAll(ctx context.Context, page, limit int) (*PaginatedUsers, error)
 	Update(ctx context.Context, id uuid.UUID, name string) (*User, error)
 	UpdateAvatar(ctx context.Context, id uuid.UUID, avatarURL string) (*User, error)
@@ -124,4 +131,3 @@ type AuthService interface {
 type EmailService interface {
 	SendOTP(ctx context.Context, email, otp string) error
 }
-

@@ -21,14 +21,18 @@ var (
 )
 
 type userService struct {
-	userRepo  domain.UserRepository
-	cacheRepo domain.CacheRepository
+	userRepo         domain.UserRepository
+	cacheRepo        domain.CacheRepository
+	subscriptionRepo domain.SubscriptionRepository
+	usageRepo        domain.UsageRepository
 }
 
-func NewUserService(userRepo domain.UserRepository, cacheRepo domain.CacheRepository) domain.UserService {
+func NewUserService(userRepo domain.UserRepository, cacheRepo domain.CacheRepository, subscriptionRepo domain.SubscriptionRepository, usageRepo domain.UsageRepository) domain.UserService {
 	return &userService{
-		userRepo:  userRepo,
-		cacheRepo: cacheRepo,
+		userRepo:         userRepo,
+		cacheRepo:        cacheRepo,
+		subscriptionRepo: subscriptionRepo,
+		usageRepo:        usageRepo,
 	}
 }
 
@@ -54,6 +58,33 @@ func (s *userService) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, 
 	_ = s.cacheRepo.Set(ctx, cacheKey, user, userCacheDuration)
 
 	return user, nil
+}
+
+func (s *userService) GetProfile(ctx context.Context, id uuid.UUID) (*domain.UserProfileResponse, error) {
+	user, err := s.userRepo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrUserNotFound
+		}
+		return nil, err
+	}
+
+	var subscription *domain.Subscription
+	sub, err := s.subscriptionRepo.FindActiveByUserID(ctx, id)
+	if err == nil {
+		subscription = sub
+	}
+
+	usages, err := s.usageRepo.GetAllCurrentMonthUsage(ctx, id)
+	if err != nil {
+		usages = []domain.Usage{}
+	}
+
+	return &domain.UserProfileResponse{
+		User:         *user,
+		Subscription: subscription,
+		Usage:        usages,
+	}, nil
 }
 
 func (s *userService) GetAll(ctx context.Context, page, limit int) (*domain.PaginatedUsers, error) {

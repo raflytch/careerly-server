@@ -34,7 +34,13 @@ func (h *UserHandler) GetProfile(c *fiber.Ctx) error {
 	if user == nil {
 		return response.Unauthorized(c, "user not authenticated")
 	}
-	return response.Success(c, fiber.StatusOK, "profile retrieved", user)
+
+	profile, err := h.userService.GetProfile(c.UserContext(), user.ID)
+	if err != nil {
+		return response.InternalError(c, err.Error())
+	}
+
+	return response.Success(c, fiber.StatusOK, "profile retrieved", profile)
 }
 
 func (h *UserHandler) GetByID(c *fiber.Ctx) error {

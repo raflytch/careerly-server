@@ -83,6 +83,43 @@ func (r *usageRepository) GetCurrentMonthUsage(ctx context.Context, userID uuid.
 	return r.scanUsage(r.db.QueryRowContext(ctx, query, userID, feature, periodMonth))
 }
 
+func (r *usageRepository) GetAllCurrentMonthUsage(ctx context.Context, userID uuid.UUID) ([]domain.Usage, error) {
+	now := time.Now()
+	periodMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	query := `
+		SELECT ` + usageColumns + `
+		FROM usage
+		WHERE user_id = $1 AND period_month = $2 AND deleted_at IS NULL
+	`
+	rows, err := r.db.QueryContext(ctx, query, userID, periodMonth)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	usages := make([]domain.Usage, 0)
+	for rows.Next() {
+		var usage domain.Usage
+		var feature string
+		err := rows.Scan(
+			&usage.ID,
+			&usage.UserID,
+			&feature,
+			&usage.PeriodMonth,
+			&usage.Count,
+			&usage.CreatedAt,
+			&usage.DeletedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		usage.Feature = domain.FeatureType(feature)
+		usages = append(usages, usage)
+	}
+	return usages, rows.Err()
+}
+
 func (r *usageRepository) scanUsage(row *sql.Row) (*domain.Usage, error) {
 	var usage domain.Usage
 	var feature string

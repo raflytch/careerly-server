@@ -10,7 +10,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// TransactionStatus represents the status of a transaction in our system
 type TransactionStatus string
 
 const (
@@ -21,7 +20,6 @@ const (
 	TransactionStatusCancel  TransactionStatus = "cancel"
 )
 
-// Transaction domain errors
 var (
 	ErrTransactionNotFound      = errors.New("transaction not found")
 	ErrTransactionAlreadyPaid   = errors.New("transaction has already been paid")
@@ -31,52 +29,46 @@ var (
 	ErrInvalidOrderID           = errors.New("invalid order id format")
 )
 
-// Transaction represents a payment transaction with Midtrans
-// Fields with json:"-" are stored in DB but not exposed in API response for security
 type Transaction struct {
 	ID                uuid.UUID         `json:"id"`
 	UserID            uuid.UUID         `json:"user_id"`
 	PlanID            uuid.UUID         `json:"plan_id"`
 	SubscriptionID    *uuid.UUID        `json:"subscription_id,omitempty"`
 	OrderID           string            `json:"order_id"`
-	TransactionID     *string           `json:"-"` // Hidden: Midtrans internal ID
+	TransactionID     *string           `json:"-"`
 	GrossAmount       decimal.Decimal   `json:"gross_amount"`
 	PaymentType       *string           `json:"payment_type,omitempty"`
 	PaymentMethod     *string           `json:"payment_method,omitempty"`
 	Status            TransactionStatus `json:"status"`
-	TransactionStatus *string           `json:"-"` // Hidden: Use Status field instead
-	FraudStatus       *string           `json:"-"` // Hidden: Internal use only
-	SnapToken         *string           `json:"-"` // Hidden: Only needed during payment init
+	TransactionStatus *string           `json:"-"`
+	FraudStatus       *string           `json:"-"`
+	SnapToken         *string           `json:"-"`
 	RedirectURL       *string           `json:"redirect_url,omitempty"`
-	MidtransResponse  json.RawMessage   `json:"-"` // Hidden: Contains sensitive data (signature, merchant_id)
+	MidtransResponse  json.RawMessage   `json:"-"`
 	PaidAt            *time.Time        `json:"paid_at,omitempty"`
 	ExpiredAt         *time.Time        `json:"expired_at,omitempty"`
 	CreatedAt         time.Time         `json:"created_at"`
 	UpdatedAt         time.Time         `json:"updated_at"`
-	DeletedAt         *time.Time        `json:"-"` // Hidden: Internal soft delete
+	DeletedAt         *time.Time        `json:"-"`
 	Plan              *Plan             `json:"plan,omitempty"`
-	User              *User             `json:"-"` // Hidden: User data available via user context
+	User              *User             `json:"-"`
 }
 
-// CreateTransactionRequest is the request payload for creating a transaction
 type CreateTransactionRequest struct {
 	PlanID uuid.UUID `json:"plan_id" validate:"required"`
 }
 
-// TransactionResponse is the response returned after creating a transaction
 type TransactionResponse struct {
 	Transaction *Transaction `json:"transaction"`
 	SnapToken   string       `json:"snap_token"`
 	RedirectURL string       `json:"redirect_url"`
 }
 
-// PaginatedTransactions contains a list of transactions with pagination info
 type PaginatedTransactions struct {
 	Transactions []Transaction `json:"transactions"`
 	Pagination   Pagination    `json:"pagination"`
 }
 
-// MidtransWebhookPayload represents the notification payload from Midtrans
 type MidtransWebhookPayload struct {
 	TransactionTime   string `json:"transaction_time"`
 	TransactionStatus string `json:"transaction_status"`
@@ -93,7 +85,6 @@ type MidtransWebhookPayload struct {
 	Currency          string `json:"currency"`
 }
 
-// TransactionRepository defines the interface for transaction data access
 type TransactionRepository interface {
 	Create(ctx context.Context, transaction *Transaction) error
 	FindByID(ctx context.Context, id uuid.UUID) (*Transaction, error)
@@ -105,18 +96,11 @@ type TransactionRepository interface {
 	SoftDelete(ctx context.Context, id uuid.UUID) error
 }
 
-// TransactionService defines the interface for transaction business logic
 type TransactionService interface {
-	// CreateTransaction creates a new transaction and returns Snap token for payment
 	CreateTransaction(ctx context.Context, userID uuid.UUID, req *CreateTransactionRequest) (*TransactionResponse, error)
-	// GetByID retrieves a transaction by ID for a specific user
 	GetByID(ctx context.Context, userID uuid.UUID, id uuid.UUID) (*Transaction, error)
-	// GetByOrderID retrieves a transaction by order ID
 	GetByOrderID(ctx context.Context, orderID string) (*Transaction, error)
-	// GetUserTransactions retrieves all transactions for a user with pagination
 	GetUserTransactions(ctx context.Context, userID uuid.UUID, page, limit int) (*PaginatedTransactions, error)
-	// HandleWebhook processes Midtrans webhook notification
 	HandleWebhook(ctx context.Context, payload map[string]interface{}) error
-	// CheckTransactionStatus manually checks transaction status from Midtrans
 	CheckTransactionStatus(ctx context.Context, orderID string) (*Transaction, error)
 }

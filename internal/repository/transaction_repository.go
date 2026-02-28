@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	// Column definitions for transactions table
 	transactionColumns = `
 		id, user_id, plan_id, subscription_id, order_id, transaction_id, 
 		gross_amount, payment_type, payment_method, status, transaction_status, 
@@ -26,12 +25,10 @@ type transactionRepository struct {
 	db *sql.DB
 }
 
-// NewTransactionRepository creates a new transaction repository instance
 func NewTransactionRepository(db *sql.DB) domain.TransactionRepository {
 	return &transactionRepository{db: db}
 }
 
-// Create inserts a new transaction into the database
 func (r *transactionRepository) Create(ctx context.Context, tx *domain.Transaction) error {
 	query := `
 		INSERT INTO transactions (
@@ -42,7 +39,6 @@ func (r *transactionRepository) Create(ctx context.Context, tx *domain.Transacti
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 	`
 
-	// Handle nil MidtransResponse - convert to sql.NullString for PostgreSQL jsonb
 	var midtransResp sql.NullString
 	if len(tx.MidtransResponse) > 0 {
 		midtransResp = sql.NullString{String: string(tx.MidtransResponse), Valid: true}
@@ -72,7 +68,6 @@ func (r *transactionRepository) Create(ctx context.Context, tx *domain.Transacti
 	return err
 }
 
-// FindByID retrieves a transaction by its ID
 func (r *transactionRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Transaction, error) {
 	query := `
 		SELECT ` + transactionColumns + `
@@ -82,7 +77,6 @@ func (r *transactionRepository) FindByID(ctx context.Context, id uuid.UUID) (*do
 	return r.scanTransaction(r.db.QueryRowContext(ctx, query, id))
 }
 
-// FindByOrderID retrieves a transaction by its Midtrans order ID
 func (r *transactionRepository) FindByOrderID(ctx context.Context, orderID string) (*domain.Transaction, error) {
 	query := `
 		SELECT ` + transactionColumns + `
@@ -92,7 +86,6 @@ func (r *transactionRepository) FindByOrderID(ctx context.Context, orderID strin
 	return r.scanTransaction(r.db.QueryRowContext(ctx, query, orderID))
 }
 
-// FindByUserID retrieves all transactions for a user with pagination
 func (r *transactionRepository) FindByUserID(ctx context.Context, userID uuid.UUID, limit, offset int) ([]domain.Transaction, error) {
 	query := `
 		SELECT ` + transactionColumns + `
@@ -119,7 +112,6 @@ func (r *transactionRepository) FindByUserID(ctx context.Context, userID uuid.UU
 	return transactions, rows.Err()
 }
 
-// CountByUserID counts total transactions for a user
 func (r *transactionRepository) CountByUserID(ctx context.Context, userID uuid.UUID) (int64, error) {
 	query := `SELECT COUNT(id) FROM transactions WHERE user_id = $1 AND deleted_at IS NULL`
 	var count int64
@@ -127,7 +119,6 @@ func (r *transactionRepository) CountByUserID(ctx context.Context, userID uuid.U
 	return count, err
 }
 
-// Update updates an existing transaction
 func (r *transactionRepository) Update(ctx context.Context, tx *domain.Transaction) error {
 	query := `
 		UPDATE transactions SET
@@ -147,7 +138,6 @@ func (r *transactionRepository) Update(ctx context.Context, tx *domain.Transacti
 		WHERE id = $14 AND deleted_at IS NULL
 	`
 
-	// Handle nil MidtransResponse for PostgreSQL jsonb column
 	var midtransResp sql.NullString
 	if len(tx.MidtransResponse) > 0 {
 		midtransResp = sql.NullString{String: string(tx.MidtransResponse), Valid: true}
@@ -173,7 +163,6 @@ func (r *transactionRepository) Update(ctx context.Context, tx *domain.Transacti
 	return err
 }
 
-// UpdateStatus updates the transaction status and stores Midtrans response (optimized for webhook)
 func (r *transactionRepository) UpdateStatus(ctx context.Context, orderID string, status domain.TransactionStatus, midtransResponse json.RawMessage) error {
 	query := `
 		UPDATE transactions SET
@@ -184,7 +173,6 @@ func (r *transactionRepository) UpdateStatus(ctx context.Context, orderID string
 		WHERE order_id = $4 AND deleted_at IS NULL
 	`
 
-	// Handle nil MidtransResponse
 	var midtransResp sql.NullString
 	if len(midtransResponse) > 0 {
 		midtransResp = sql.NullString{String: string(midtransResponse), Valid: true}
@@ -194,7 +182,6 @@ func (r *transactionRepository) UpdateStatus(ctx context.Context, orderID string
 	return err
 }
 
-// SoftDelete marks a transaction as deleted
 func (r *transactionRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
 	query := `
 		UPDATE transactions
@@ -205,13 +192,11 @@ func (r *transactionRepository) SoftDelete(ctx context.Context, id uuid.UUID) er
 	return err
 }
 
-// scanTransaction scans a single transaction from sql.Row
-// Uses sql.NullString for nullable JSONB column to handle NULL values properly
 func (r *transactionRepository) scanTransaction(row *sql.Row) (*domain.Transaction, error) {
 	var tx domain.Transaction
 	var grossAmountStr string
 	var status string
-	var midtransRespNull sql.NullString // Use NullString to handle NULL from jsonb
+	var midtransRespNull sql.NullString
 
 	err := row.Scan(
 		&tx.ID,
@@ -228,7 +213,7 @@ func (r *transactionRepository) scanTransaction(row *sql.Row) (*domain.Transacti
 		&tx.FraudStatus,
 		&tx.SnapToken,
 		&tx.RedirectURL,
-		&midtransRespNull, // Scan into NullString
+		&midtransRespNull,
 		&tx.PaidAt,
 		&tx.ExpiredAt,
 		&tx.CreatedAt,
@@ -239,11 +224,9 @@ func (r *transactionRepository) scanTransaction(row *sql.Row) (*domain.Transacti
 		return nil, err
 	}
 
-	// Parse gross amount from string to decimal
 	tx.GrossAmount, _ = decimal.NewFromString(grossAmountStr)
 	tx.Status = domain.TransactionStatus(status)
 
-	// Convert NullString to json.RawMessage if valid
 	if midtransRespNull.Valid {
 		tx.MidtransResponse = json.RawMessage(midtransRespNull.String)
 	}
@@ -251,13 +234,11 @@ func (r *transactionRepository) scanTransaction(row *sql.Row) (*domain.Transacti
 	return &tx, nil
 }
 
-// scanTransactionFromRows scans a transaction from sql.Rows (used in FindByUserID)
-// Uses sql.NullString for nullable JSONB column to handle NULL values properly
 func (r *transactionRepository) scanTransactionFromRows(rows *sql.Rows) (*domain.Transaction, error) {
 	var tx domain.Transaction
 	var grossAmountStr string
 	var status string
-	var midtransRespNull sql.NullString // Use NullString to handle NULL from jsonb
+	var midtransRespNull sql.NullString
 
 	err := rows.Scan(
 		&tx.ID,
@@ -274,7 +255,7 @@ func (r *transactionRepository) scanTransactionFromRows(rows *sql.Rows) (*domain
 		&tx.FraudStatus,
 		&tx.SnapToken,
 		&tx.RedirectURL,
-		&midtransRespNull, // Scan into NullString
+		&midtransRespNull,
 		&tx.PaidAt,
 		&tx.ExpiredAt,
 		&tx.CreatedAt,
@@ -288,7 +269,6 @@ func (r *transactionRepository) scanTransactionFromRows(rows *sql.Rows) (*domain
 	tx.GrossAmount, _ = decimal.NewFromString(grossAmountStr)
 	tx.Status = domain.TransactionStatus(status)
 
-	// Convert NullString to json.RawMessage if valid
 	if midtransRespNull.Valid {
 		tx.MidtransResponse = json.RawMessage(midtransRespNull.String)
 	}

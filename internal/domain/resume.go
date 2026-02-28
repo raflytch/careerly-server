@@ -60,6 +60,7 @@ type UsageRepository interface {
 	FindOrCreate(ctx context.Context, userID uuid.UUID, feature FeatureType, periodMonth time.Time) (*Usage, error)
 	IncrementCount(ctx context.Context, id uuid.UUID) error
 	GetCurrentMonthUsage(ctx context.Context, userID uuid.UUID, feature FeatureType) (*Usage, error)
+	GetAllCurrentMonthUsage(ctx context.Context, userID uuid.UUID) ([]Usage, error)
 }
 
 type ResumeContent struct {
