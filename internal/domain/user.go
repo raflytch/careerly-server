@@ -129,7 +129,7 @@ type UserService interface {
 
 type AuthService interface {
 	GetGoogleLoginURL(state string) string
-	HandleGoogleCallback(ctx context.Context, code string) (*AuthResponse, error)
+	HandleGoogleCallback(ctx context.Context, code string) (string, error)
 	ValidateToken(ctx context.Context, tokenString string) (*User, error)
 	RequestRestoreOTP(ctx context.Context, email string) (*OTPResponse, error)
 	VerifyRestoreOTP(ctx context.Context, email, otp string) (*RestoreUserResponse, error)

@@ -109,7 +109,7 @@ func main() {
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	// Initialize handlers
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, cfg.Google.FrontendURL)
 	userHandler := handler.NewUserHandler(userService, imagekitClient)
 	planHandler := handler.NewPlanHandler(planService)
 	resumeHandler := handler.NewResumeHandler(resumeService, quotaService)

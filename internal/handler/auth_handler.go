@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"net/url"
 
 	"github.com/raflytch/careerly-server/internal/domain"
 	"github.com/raflytch/careerly-server/internal/service"
@@ -14,10 +16,14 @@ import (
 
 type AuthHandler struct {
 	authService domain.AuthService
+	frontendURL string
 }
 
-func NewAuthHandler(authService domain.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService domain.AuthService, frontendURL string) *AuthHandler {
+	return &AuthHandler{
+		authService: authService,
+		frontendURL: frontendURL,
+	}
 }
 
 func (h *AuthHandler) GoogleLogin(c *fiber.Ctx) error {
@@ -37,21 +43,27 @@ func (h *AuthHandler) GoogleLogin(c *fiber.Ctx) error {
 func (h *AuthHandler) GoogleCallback(c *fiber.Ctx) error {
 	code := c.Query("code")
 	if code == "" {
-		return response.BadRequest(c, "missing authorization code")
+		return h.redirectWithError(c, "missing authorization code")
 	}
 
-	authResponse, err := h.authService.HandleGoogleCallback(c.UserContext(), code)
+	token, err := h.authService.HandleGoogleCallback(c.UserContext(), code)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserDeleted) {
-			return response.Error(c, fiber.StatusConflict, err.Error())
+			return h.redirectWithError(c, err.Error())
 		}
 		if errors.Is(err, service.ErrUserNotActive) {
-			return response.Forbidden(c, err.Error())
+			return h.redirectWithError(c, err.Error())
 		}
-		return response.InternalError(c, err.Error())
+		return h.redirectWithError(c, "authentication failed")
 	}
 
-	return response.Success(c, fiber.StatusOK, "login successful", authResponse)
+	redirectURL := fmt.Sprintf("%s?token=%s", h.frontendURL, url.QueryEscape(token))
+	return c.Redirect(redirectURL)
+}
+
+func (h *AuthHandler) redirectWithError(c *fiber.Ctx, message string) error {
+	redirectURL := fmt.Sprintf("%s?error=%s", h.frontendURL, url.QueryEscape(message))
+	return c.Redirect(redirectURL)
 }
 
 func (h *AuthHandler) RequestRestoreOTP(c *fiber.Ctx) error {

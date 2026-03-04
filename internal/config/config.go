@@ -73,6 +73,7 @@ type GoogleConfig struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
+	FrontendURL  string
 }
 
 func Load() *Config {
@@ -103,6 +104,7 @@ func Load() *Config {
 			ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 			ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 			RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", ""),
+			FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:5173"),
 		},
 		ImageKit: ImageKitConfig{
 			PublicKey:   getEnv("IMAGEKIT_PUBLIC_KEY", ""),

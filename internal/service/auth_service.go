@@ -39,6 +39,7 @@ type authService struct {
 	emailService domain.EmailService
 	oauthConfig  *oauth2.Config
 	jwtManager   *jwt.JWTManager
+	frontendURL  string
 }
 
 func NewAuthService(
@@ -65,6 +66,7 @@ func NewAuthService(
 		emailService: emailService,
 		oauthConfig:  oauthConfig,
 		jwtManager:   jwtManager,
+		frontendURL:  cfg.FrontendURL,
 	}
 }
 
@@ -72,27 +74,31 @@ func (s *authService) GetGoogleLoginURL(state string) string {
 	return s.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
 
-func (s *authService) HandleGoogleCallback(ctx context.Context, code string) (*domain.AuthResponse, error) {
+func (s *authService) GetFrontendURL() string {
+	return s.frontendURL
+}
+
+func (s *authService) HandleGoogleCallback(ctx context.Context, code string) (string, error) {
 	token, err := s.oauthConfig.Exchange(ctx, code)
 	if err != nil {
-		return nil, ErrFailedToExchangeToken
+		return "", ErrFailedToExchangeToken
 	}
 
 	client := s.oauthConfig.Client(ctx, token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
-		return nil, ErrFailedToGetUserInfo
+		return "", ErrFailedToGetUserInfo
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, ErrFailedToGetUserInfo
+		return "", ErrFailedToGetUserInfo
 	}
 
 	var googleUser domain.GoogleUserInfo
 	if err := json.Unmarshal(body, &googleUser); err != nil {
-		return nil, ErrFailedToGetUserInfo
+		return "", ErrFailedToGetUserInfo
 	}
 
 	user, err := s.userRepo.FindByGoogleID(ctx, googleUser.ID)
@@ -100,7 +106,7 @@ func (s *authService) HandleGoogleCallback(ctx context.Context, code string) (*d
 		if errors.Is(err, sql.ErrNoRows) {
 			deletedUser, delErr := s.userRepo.FindDeletedByGoogleID(ctx, googleUser.ID)
 			if delErr == nil && deletedUser != nil {
-				return nil, domain.ErrUserDeleted
+				return "", domain.ErrUserDeleted
 			}
 
 			user = &domain.User{
@@ -117,36 +123,33 @@ func (s *authService) HandleGoogleCallback(ctx context.Context, code string) (*d
 				if s.isDuplicateKeyError(err) {
 					deletedUser, delErr := s.userRepo.FindDeletedByGoogleID(ctx, googleUser.ID)
 					if delErr == nil && deletedUser != nil {
-						return nil, domain.ErrUserDeleted
+						return "", domain.ErrUserDeleted
 					}
 				}
-				return nil, err
+				return "", err
 			}
 		} else {
-			return nil, err
+			return "", err
 		}
 	}
 
 	if !user.IsActive {
-		return nil, ErrUserNotActive
+		return "", ErrUserNotActive
 	}
 
 	if err := s.userRepo.UpdateLastLogin(ctx, user.ID); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	jwtToken, err := s.jwtManager.Generate(user.ID, user.Email, string(user.Role))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	cacheKey := fmt.Sprintf("%s%s", userCachePrefix, user.ID.String())
 	_ = s.cacheRepo.Set(ctx, cacheKey, user, userCacheDuration)
 
-	return &domain.AuthResponse{
-		Token: jwtToken,
-		User:  *user,
-	}, nil
+	return jwtToken, nil
 }
 
 func (s *authService) ValidateToken(ctx context.Context, tokenString string) (*domain.User, error) {
