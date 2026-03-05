@@ -15,6 +15,11 @@ type Config struct {
 	GenAI    GenAIConfig
 	SMTP     SMTPConfig
 	Midtrans MidtransConfig
+	CORS     CORSConfig
+}
+
+type CORSConfig struct {
+	AllowOrigins string
 }
 
 type MidtransConfig struct {
@@ -44,8 +49,9 @@ type ImageKitConfig struct {
 }
 
 type AppConfig struct {
-	Port string
-	Env  string
+	Port        string
+	Env         string
+	FrontendURL string
 }
 
 type DatabaseConfig struct {
@@ -77,10 +83,13 @@ type GoogleConfig struct {
 }
 
 func Load() *Config {
+	frontendURL := getEnv("FRONTEND_URL", "http://localhost:5173")
+
 	return &Config{
 		App: AppConfig{
-			Port: getEnv("APP_PORT", "3000"),
-			Env:  getEnv("APP_ENV", "development"),
+			Port:        getEnv("APP_PORT", "3000"),
+			Env:         getEnv("APP_ENV", "development"),
+			FrontendURL: frontendURL,
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
@@ -104,7 +113,7 @@ func Load() *Config {
 			ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 			ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 			RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", ""),
-			FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:5173"),
+			FrontendURL:  frontendURL,
 		},
 		ImageKit: ImageKitConfig{
 			PublicKey:   getEnv("IMAGEKIT_PUBLIC_KEY", ""),
@@ -127,6 +136,9 @@ func Load() *Config {
 			ClientKey:  getEnv("MIDTRANS_CLIENT_KEY", ""),
 			IsSandbox:  getEnvAsBool("MIDTRANS_IS_SANDBOX", true),
 			MerchantID: getEnv("MIDTRANS_MERCHANT_ID", ""),
+		},
+		CORS: CORSConfig{
+			AllowOrigins: frontendURL,
 		},
 	}
 }
